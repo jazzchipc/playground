@@ -4,6 +4,9 @@ print(sys.executable)
 import os
 import sys
 import logging
+import csv
+import errno
+from datetime import datetime
 
 import numpy as np
 
@@ -14,7 +17,7 @@ from pommerman.characters import Bomber
 from pommerman import utility
 
 # Make sure you have tensorforce installed: pip install tensorforce
-from tensorforce.agents import PPOAgent
+from tensorforce.agents import PPOAgent, TRPOAgent, VPGAgent
 from tensorforce.execution import Runner
 from tensorforce.contrib.openai_gym import OpenAIGym
 
@@ -58,7 +61,7 @@ env = Pomme(**config["env_kwargs"])
 env.seed(0)
 
 # Create a Proximal Policy Optimization agent
-agent = PPOAgent(
+agentPPO = PPOAgent(
     states=dict(type='float', shape=env.observation_space.shape),
     actions=dict(type='int', num_actions=env.action_space.n),
     network=[
@@ -70,6 +73,26 @@ agent = PPOAgent(
         type='adam',
         learning_rate=1e-4
     )
+)
+
+# Create a Trust Region Policy Optimization agent
+agentTRPO = TRPOAgent(
+    states=dict(type='float', shape=env.observation_space.shape),
+    actions=dict(type='int', num_actions=env.action_space.n),
+    network=[
+        dict(type='dense', size=64),
+        dict(type='dense', size=64)
+    ]
+)
+
+# Create a Vanilla Policy Gradient agent
+agentVPG = VPGAgent(
+    states=dict(type='float', shape=env.observation_space.shape),
+    actions=dict(type='int', num_actions=env.action_space.n),
+    network=[
+        dict(type='dense', size=64),
+        dict(type='dense', size=64)
+    ]
 )
 
 # Add 3 random agents
@@ -109,11 +132,42 @@ class WrappedEnv(OpenAIGym):
         return agent_obs
 
 def main():
+    now = datetime.now()
+    current_time = now.strftime("%Y-%m-%d-%H-%M-%S")
+
+    algorithm = "ppo"
+
+    agent = None
+
+    if algorithm == "ppo":
+        agent = agentPPO
+    elif algorithm == "trpo":
+        agent = agentTRPO
+    elif algorithm == "vpg":
+        agent = agentVPG
+    else:
+        sys.exit("The chosen algorithm '{}' is not valid.".format(algorithm))
+
     # Instantiate and run the environment for 5 episodes.
-    wrapped_env = WrappedEnv(env, True)
+    wrapped_env = WrappedEnv(env, False)
     runner = Runner(agent=agent, environment=wrapped_env)
     runner.run(episodes=5, max_episode_timesteps=2000)
-    print("Stats: ", runner.episode_rewards, runner.episode_timesteps, runner.episode_times)
+
+    results_file_name = ".results/{}-{}.csv".format(algorithm, current_time) 
+
+    if not os.path.exists(os.path.dirname(results_file_name)):
+        try:
+            os.makedirs(os.path.dirname(results_file_name))
+        except OSError as exc: # Guard against race condition
+            if exc.errno != errno.EEXIST:
+                raise
+
+    results = zip(runner.episode_rewards, runner.episode_timesteps, runner.episode_times)
+
+    with open(results_file_name, "w") as f:
+        writer = csv.writer(f)
+        for row in results:
+            writer.writerow(row)
 
     try:
         runner.close()
