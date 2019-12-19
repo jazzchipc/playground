@@ -1,3 +1,7 @@
+# Make TF not use GPU, even if it is available
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
 import sys
 
 print(sys.executable)
@@ -192,7 +196,7 @@ def train(algorithm, num_episodes):
     runner = Runner(agent=agent, environment=wrapped_env)
     runner.run(episodes=num_episodes, max_episode_timesteps=2000)
 
-    results_file_name = ".results/{}-{}.csv".format(algorithm, current_time)
+    results_file_name = "my_results/{}-{}.csv".format(algorithm, current_time)
 
     if not os.path.exists(os.path.dirname(results_file_name)):
         try:
